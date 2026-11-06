@@ -22,8 +22,22 @@ RTX 5080과 현재 드라이버에서는 Warp 초기화 중 `cuDeviceGetUuid` en
 이 메시지가 물리·역전파 검사를 대신하지 않으며, 실행 가능 여부는 위 검사 결과로 확인한다.
 Gym과 TorchScript의 upstream deprecation 메시지도 설치 검사에서 출력될 수 있다.
 
+## 병렬 env 수
+
+RTX 5080, Warp 1.7.2, Rewarped `8500e64`의 dflex Ant에서 env 수를 늘리면 일부 env가 첫 step부터 NaN 보상·관측을
+낸다. 같은 정책, `randomize=False`, `no_grad=True`에서 25·128개는 0건(128개 200 step), 200개는 1건, 256개는 18건,
+441개는 182건, 961개는 730건이었다. 깨진 env는 index에 흩어져 있고 CUDA graph capture를 꺼도 같다. 원인은 확인하지
+않았으며, 그 전까지 병렬 평가와 학습은 env 128개 이하로 나눠 실행한다.
+
+## skills와의 Python 경계
+
+Rewarped `8500e64`가 고정한 `usd-core==24.5`에는 Python 3.12 wheel이 없어 이 환경은 Python 3.11이다.
+`skills`는 Python 3.11 이상을 지원하며, 형제 checkout `../skills`를 editable dependency로 설치한다.
+Rewarped 환경의 Python·PyTorch·Warp·USD 버전은 유지하고 MJLab·RSL-RL extra는 설치하지 않는다.
+학습 계산은 설치된 `world_model_skills`에서 import하며, Ant의 정책 구조와 checkpoint 복원은 `source/ant/`가 소유한다.
+
 ## 미분 경계
 
 Rewarped의 simulator 미분과 학습한 dynamics 모델의 미분은 서로 다른 전이 구현이다.
-공유 library로 이관할 때는 목적함수·학습 계산과 task의 전이·reset·보상 연결을 분리한다.
-MJLab용 조립은 해당 consumer가 소유한다.
+목적함수·학습 계산은 `world_model_skills`에서 import하고, task의 전이·reset·보상 연결과 미분 가능한 rollout은
+이 consumer가 소유한다. MJLab용 조립은 해당 consumer가 소유한다.

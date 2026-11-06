@@ -1,13 +1,15 @@
 [project]
-name = "dyna-rl"
+name = "dyna-rewarped"
 version = "0.1.0"
 description = "미분 가능한 전이와 dynamics 모델을 이용한 정책 학습 연구"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "gym==0.23.1",
+    "matplotlib==3.11.2",
     "numpy==1.26.4",
     "rewarped @ git+https://github.com/rewarped/rewarped.git@8500e645e2404a44bb6e83d112b1ec2b400ab792",
     "torch==2.15.0",
+    "skills",
     "warp-lang==1.7.2",
 ]
 
@@ -16,3 +18,6 @@ dev = ["ruff==0.15.0"]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+skills = { path = "../skills", editable = true }
