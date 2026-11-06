@@ -5,6 +5,7 @@ description = "미분 가능한 전이와 dynamics 모델을 이용한 정책 �
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "gym==0.23.1",
+    "hydra-core==1.3.2",
     "matplotlib==3.11.2",
     "numpy==1.26.4",
     "rewarped @ git+https://github.com/rewarped/rewarped.git@8500e645e2404a44bb6e83d112b1ec2b400ab792",
@@ -15,6 +16,17 @@ dependencies = [
 
 [dependency-groups]
 dev = ["ruff==0.15.0"]
+
+[project.optional-dependencies]
+stock = [
+    "hydra-colorlog==1.2.0",
+    "wandb==0.31.0",
+    "termcolor==3.3.0",
+    "tensorboard==2.21.0",
+    "pandas==3.0.6",
+    "tabulate==0.10.0",
+    "scipy==1.17.1",
+]
 
 [tool.uv]
 package = false

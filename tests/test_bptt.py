@@ -1,4 +1,4 @@
-"""Ant rollout의 graph 경계·종료 snapshot·정책 checkpoint 검사"""
+"""DFlex rollout의 graph 경계·종료 snapshot·정책 checkpoint 검사"""
 
 import io
 import unittest
@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from world_model_skills import BPTT
 
-from source.ant import load_policy, make_policy, rollout
+from source.dflex import load_policy, make_policy, rollout
 
 
 class _ToyEnv:
@@ -108,16 +108,19 @@ class BPTTTest(unittest.TestCase):
             self.assertTrue(torch.isfinite(parameter.grad).all())
         self.assertTrue(any(parameter.grad.abs().max().item() > 0 for parameter in parameters))
 
-        checkpoint = {"task": "ant", "policy_config": config, "policy": policy.state_dict()}
-        buffer = io.BytesIO()
-        torch.save(checkpoint, buffer)
-        buffer.seek(0)
-        with torch.random.fork_rng(devices=[]):
-            restored, checkpoint = load_policy(buffer, "cpu")
-        self.assertFalse(restored.training)
-        self.assertEqual(checkpoint["policy_config"], config)
-        torch.testing.assert_close(restored(obs), actions.detach(), rtol=0, atol=0)
-        torch.testing.assert_close(torch.vmap(restored)(obs), restored(obs))
+        for task in ("ant", "humanoid"):
+            with self.subTest(task=task):
+                checkpoint = {"task": task, "policy_config": config, "policy": policy.state_dict()}
+                buffer = io.BytesIO()
+                torch.save(checkpoint, buffer)
+                buffer.seek(0)
+                with torch.random.fork_rng(devices=[]):
+                    restored, checkpoint = load_policy(buffer, "cpu")
+                self.assertFalse(restored.training)
+                self.assertEqual(checkpoint["task"], task)
+                self.assertEqual(checkpoint["policy_config"], config)
+                torch.testing.assert_close(restored(obs), actions.detach(), rtol=0, atol=0)
+                torch.testing.assert_close(torch.vmap(restored)(obs), restored(obs))
 
 
 if __name__ == "__main__":

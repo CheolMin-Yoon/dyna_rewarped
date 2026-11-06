@@ -29,12 +29,16 @@ RTX 5080, Warp 1.7.2, Rewarped `8500e64`의 dflex Ant에서 env 수를 늘리면
 441개는 182건, 961개는 730건이었다. 깨진 env는 index에 흩어져 있고 CUDA graph capture를 꺼도 같다. 원인은 확인하지
 않았으며, 그 전까지 병렬 평가와 학습은 env 128개 이하로 나눠 실행한다.
 
+Humanoid는 같은 설치에서 128개 환경의 첫 step, 96개 환경의 16번째 step에 비유한 값이 발생했다.
+64개 환경·horizon 32의 초기 rollout·역전파는 통과했지만 장기 학습 안정성을 보장하는 값은 아니다.
+학습과 landscape의 기본 환경 수는 64다. 측정 원본은 `logs/benchmarks/compile_humanoid_20261106/`에 있다.
+
 ## skills와의 Python 경계
 
 Rewarped `8500e64`가 고정한 `usd-core==24.5`에는 Python 3.12 wheel이 없어 이 환경은 Python 3.11이다.
 `skills`는 Python 3.11 이상을 지원하며, 형제 checkout `../skills`를 editable dependency로 설치한다.
 Rewarped 환경의 Python·PyTorch·Warp·USD 버전은 유지하고 MJLab·RSL-RL extra는 설치하지 않는다.
-학습 계산은 설치된 `world_model_skills`에서 import하며, Ant의 정책 구조와 checkpoint 복원은 `source/ant/`가 소유한다.
+학습 계산은 설치된 `world_model_skills`에서 import하며, stock Humanoid·Ant의 정책 조립과 checkpoint 복원은 `source/dflex/`가 소유한다.
 
 ## 미분 경계
 

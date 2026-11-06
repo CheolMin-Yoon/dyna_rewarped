@@ -9,6 +9,7 @@ policy forward는 torch.func.vmap 가능해야 함(제자리 연산·.item() 없
 
 import argparse
 import importlib
+import json
 from pathlib import Path
 
 import matplotlib
@@ -20,15 +21,22 @@ import numpy as np
 import torch
 from matplotlib.colors import LightSource, Normalize
 from torch.func import functional_call
+from world_model_skills import PolicyModel
 
-from source.ant import load_policy
+from source.dflex import load_normalizer, load_policy
 
 
-def make_env(spec, num_envs, episode_length, device):
+def make_env(spec, num_envs, episode_length, device, env_config=None):
     """'module:Class' 이름의 Rewarped env를 미분 없이 생성"""
     module_name, class_name = spec.split(":")
     env_class = getattr(importlib.import_module(module_name), class_name)
-    kwargs = {"num_envs": num_envs, "device": device, "render": False, "no_grad": True, "randomize": False}
+    kwargs = (env_config or {}) | {
+        "num_envs": num_envs,
+        "device": device,
+        "render": False,
+        "no_grad": True,
+        "randomize": False,
+    }
     if episode_length is not None:
         kwargs["episode_length"] = episode_length
     return env_class(**kwargs)
@@ -65,24 +73,29 @@ def make_grid_params(params, generator, coeff_a, coeff_b):
 
 
 @torch.no_grad()
-def evaluate_returns(env, policy, grid_params, buffers):
+def evaluate_returns(env, policy, grid_params, buffers, normalizer=None):
     """
     env i는 grid 점 i의 parameter로 한 episode, 첫 종료 전 보상만 합산
 
     grid_params: name → [G, ...], 반환 [G], 물리 발산(보상 비유한)한 점은 NaN
     """
 
+    policy_kwargs = {"deterministic": True} if isinstance(policy, PolicyModel) else {}
+
     def act(params, obs):
-        return functional_call(policy, (params, buffers), (obs[None],))[0]
+        return functional_call(policy, (params, buffers), (obs[None],), policy_kwargs)[0]
 
     batched_act = torch.vmap(act)
     obs = env.reset()
+    obs = obs["obs"] if isinstance(obs, dict) else obs
     returns = torch.zeros(env.num_envs, device=obs.device)
     alive = torch.ones(env.num_envs, dtype=torch.bool, device=obs.device)
     diverged = torch.zeros_like(alive)
     for _ in range(env.episode_length):
-        actions = batched_act(grid_params, torch.nan_to_num(obs)).clamp(-1.0, 1.0)
+        policy_obs = normalizer(obs) if normalizer is not None else obs
+        actions = batched_act(grid_params, torch.nan_to_num(policy_obs)).clamp(-1.0, 1.0)
         obs, reward, done, _ = env.step(actions)
+        obs = obs["obs"] if isinstance(obs, dict) else obs
         # 끝난 env의 NaN 보상은 곱하기 0으로 지워지지 않음 → where로 제외
         diverged |= alive & ~torch.isfinite(reward)
         alive &= ~diverged
@@ -127,14 +140,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoints", type=Path, nargs="+", required=True, help="정책마다 한 칸")
     parser.add_argument("--labels", nargs="+", default=None, help="칸 이름, 생략 시 checkpoint 이름")
-    parser.add_argument("--env", default="rewarped.envs.dflex.ant:Ant", help="'module:Class'")
+    parser.add_argument("--env", help="'module:Class', 생략 시 checkpoint의 stock task")
     parser.add_argument("--name", default="loss_landscape", help="그림·원값 파일 이름")
     parser.add_argument("--grid-size", type=int, default=31, help="축마다 점 수, grid 점은 그 제곱")
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=128,
-        help="한 번에 평가하는 grid 점(env) 수, Ant는 약 200 이상에서 일부 env가 첫 step부터 NaN",
+        default=64,
+        help="한 번에 평가하는 grid 점(env) 수, 환경별 수치 안정성은 docs/environment.md 참조",
     )
     parser.add_argument("--radius", type=float, default=1.0, help="alpha·beta 범위 [-radius, radius]")
     parser.add_argument("--episode-length", type=int, default=None, help="공통 평가 길이, 생략 시 checkpoint 설정")
@@ -151,12 +164,24 @@ def main():
     if args.episode_length is not None and args.episode_length < 1:
         parser.error("episode-length는 양수여야 함")
     policies = [load_policy(path, args.device) for path in args.checkpoints]
+    tasks = {checkpoint["task"] for _, checkpoint in policies}
+    if len(tasks) != 1:
+        parser.error("같은 task의 checkpoint가 필요함")
+    if args.env is None:
+        args.env = {
+            "ant": "rewarped.envs.dflex.ant:Ant",
+            "humanoid": "rewarped.envs.dflex.humanoid:Humanoid",
+            "allegro_hand": "rewarped.envs.isaacgymenvs.allegro_hand:AllegroHand",
+        }[tasks.pop()]
     if args.episode_length is None:
         lengths = {checkpoint["env_config"]["episode_length"] for _, checkpoint in policies}
         if len(lengths) != 1:
             parser.error("checkpoint의 episode 길이가 다름 → 공통 --episode-length 지정 필요")
         args.episode_length = lengths.pop()
-    if any(checkpoint["policy_config"] != policies[0][1]["policy_config"] for _, checkpoint in policies):
+    if any(
+        checkpoint["policy_config"] != policies[0][1]["policy_config"] or type(policy) is not type(policies[0][0])
+        for policy, checkpoint in policies
+    ):
         parser.error("같은 모델 구조의 checkpoint가 필요함")
 
     alphas = torch.linspace(-args.radius, args.radius, args.grid_size, device=args.device)
@@ -164,12 +189,14 @@ def main():
     coeff_a, coeff_b = coeff_a.reshape(-1), coeff_b.reshape(-1)
     num_points = coeff_a.numel()
     batch_size = min(args.batch_size, num_points)
-    env = make_env(args.env, batch_size, args.episode_length, args.device)
+    env_config = policies[0][1]["env_config"] | {"episode_length": args.episode_length, "randomize": False}
+    env = make_env(args.env, batch_size, args.episode_length, args.device, env_config)
     alphas_np = alphas.cpu().numpy()
     center = args.grid_size // 2
 
     losses = []
     for (policy, checkpoint), checkpoint_path, label in zip(policies, args.checkpoints, labels, strict=True):
+        normalizer = load_normalizer(checkpoint, args.device)
         params = {key: value.detach() for key, value in policy.named_parameters()}
         buffers = {key: value.detach() for key, value in policy.named_buffers()}
         generator = torch.Generator(device=args.device).manual_seed(args.seed)
@@ -179,7 +206,7 @@ def main():
             # 마지막 묶음은 첫 점으로 채워 env 수를 고정, 채운 자리는 버림
             ids = torch.arange(start, start + batch_size, device=args.device).clamp(max=num_points - 1)
             chunk_params = {key: value[ids] for key, value in grid_params.items()}
-            chunks.append(evaluate_returns(env, policy, chunk_params, buffers)[: num_points - start])
+            chunks.append(evaluate_returns(env, policy, chunk_params, buffers, normalizer)[: num_points - start])
         returns = torch.cat(chunks).view(args.grid_size, args.grid_size).cpu().numpy()
         if not np.isfinite(returns).any():
             raise FloatingPointError(f"{label}: 모든 grid 점의 보상 발산")
@@ -201,6 +228,7 @@ def main():
             seed=args.seed,
             env=args.env,
             episode_length=args.episode_length,
+            env_config=json.dumps(env_config, sort_keys=True),
             checkpoint=str(checkpoint_path.resolve()),
             iteration=checkpoint["iteration"],
         )
