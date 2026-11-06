@@ -18,7 +18,7 @@ MJLab 기반 SuperMimic과 LocoWM·RFO 같은 학습에 필요한 구성요소�
 
 알고리즘은 한 파일에서 연결해 검증한 뒤, 독립적으로 재사용할 부분을 library로 분해한다.
 Simulator·로봇·task 연결은 이 저장소에 두고, 이관한 구현은 library에서 import한다.
-기존 JAX·DiffMJX 예제는 `/home/frlab/diff_rl`에서 참고한다.
+`source/wm_skills/BPTT.py`는 JAX로 작성한 수식 참고용 원문이며, PyTorch·Rewarped 실행 대상과 구분한다.
 
 ## 환경과 검증
 

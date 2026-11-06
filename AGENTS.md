@@ -16,8 +16,7 @@
    backend dispatcher·공통 base class·빈 알고리즘 파일을 추가하지 않는다.
 5. 검증한 범용 구성요소는 `/home/frlab/skills/world_model_skills`로 이관한다. 대상 library의 계약을 먼저 읽고,
    simulator·consumer import 없이 분리한다. 이관 뒤 이 저장소는 library를 import한다.
-6. 기존 `/home/frlab/diff_rl`은 JAX·DiffMJX 참고 자료다. 소스·자산·실행 환경을 요청 없이 이동하거나 수정하지 않는다.
-7. 학습 run의 시작·중단·재개는 사용자가 정한다. 환경 설치 검사와 학습 run을 구분한다.
-8. 주석과 docstring은 마침표 없는 짧은 한국어 명사형으로 쓴다. 기계적 정렬은 `ruff check --fix`·`ruff format`으로
+6. 학습 run의 시작·중단·재개는 사용자가 정한다. 환경 설치 검사와 학습 run을 구분한다.
+7. 주석과 docstring은 마침표 없는 짧은 한국어 명사형으로 쓴다. 기계적 정렬은 `ruff check --fix`·`ruff format`으로
    하고 diff를 확인한다.
-9. 커밋은 `main`에서 경로를 명시해 stage하고, push는 요청받을 때만 한다.
+8. 커밋은 `main`에서 경로를 명시해 stage하고, push는 요청받을 때만 한다.
